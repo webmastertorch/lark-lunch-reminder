@@ -57,7 +57,7 @@ def check_and_notify(user_id, clock_in_time):
         send_message(user_id, "您已经连续工作5小时，请尽快休息并下班打卡（如果需要）。")
 
         # 给HR发送提醒，将"HR_USER_ID"替换为实际HR的用户ID
-        HR_USER_ID = "HR_USER_ID"
+        HR_USER_ID = os.environ.get("HR_USER_ID", "DEFAULT_HR_ID")
         send_message(HR_USER_ID, f"员工 {user_id} 已连续5小时未下班。")
 
 @app.route("/webhook", methods=["POST"])

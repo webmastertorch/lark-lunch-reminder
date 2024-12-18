@@ -34,7 +34,7 @@ def get_bot_access_token():
     return BOT_ACCESS_TOKEN
 
 def send_message(user_id, text):
-    # 如果实际ID为open_id，则将receive_id_type改为open_id，并确保user_id为open_id
+    # 如有需要，用 open_id 时请改为 receive_id_type=open_id 并确保 user_id 为 open_id
     url = "https://open.larksuite.com/open-apis/im/v1/messages?receive_id_type=user_id"
     headers = {
         "Authorization": f"Bearer {get_bot_access_token()}",
@@ -54,7 +54,7 @@ def send_message(user_id, text):
 
 def check_and_notify(user_id, clock_in_time):
     print(f"Check started for {user_id}, time: {clock_in_time}")
-    # 测试用：等待10秒
+    # 测试用：减少等待时间，避免长时间等待
     time.sleep(10)
     if user_id in clock_ins:
         print(f"User {user_id} still not off-duty, sending reminder...")
@@ -74,45 +74,45 @@ def webhook():
     header = data.get("header", {})
     event = data.get("event", {})
 
-    # 获取事件发生时间
     create_time_ms = header.get("create_time", 0)
     punch_time = int(create_time_ms) / 1000.0 if create_time_ms else time.time()
 
     user_id = event.get("employee_id")
     status_changes = event.get("status_changes", [])
 
-    # 按index分组变动记录
-    index_states = {}
+    # 对同一index的变化进行记录，保存按出现顺序的work_type列表
+    index_map = {}
     for change in status_changes:
         idx = change.get("index")
         work_type = change.get("work_type")
         print(f"Found work_type={work_type} for user {user_id} at index={idx}")
+        if idx not in index_map:
+            index_map[idx] = []
+        index_map[idx].append(work_type)
 
-        # 记录每个index最后一次出现的work_type
-        index_states[idx] = work_type
-
-    # 找到最大的index，即当天最新打卡记录
-    if index_states:
-        max_index = max(index_states.keys())
-        final_state = index_states[max_index]
-        print(f"User {user_id} final latest index={max_index}, state={final_state}")
-
-        if final_state == "on":
-            # 用户最终为上班状态，启动计时器
-            clock_ins[user_id] = punch_time
-            print(f"User {user_id} final state: ON duty at {punch_time}, starting check thread.")
-            t = threading.Thread(target=check_and_notify, args=(user_id, punch_time))
-            t.start()
-        else:
-            # 用户最终为下班状态，从记录中移除（如果存在）
-            if user_id in clock_ins:
-                del clock_ins[user_id]
-                print(f"User {user_id} final state: OFF duty, removed from clock_ins.")
-            else:
-                print(f"User {user_id} final state: OFF duty but not found in clock_ins, no action needed.")
-    else:
-        # 没有找到任何on/off记录
+    if not index_map:
         print(f"User {user_id} no on/off final state detected, no action.")
+        return jsonify({"code": 0, "msg": "success"})
+
+    # 寻找最大index，即最新的打卡记录
+    max_index = max(index_map.keys())
+    # 查看该index的work_type列表，最后一个出现的work_type才是最终状态
+    final_state = index_map[max_index][-1]
+    print(f"User {user_id} final latest index={max_index}, final state={final_state}")
+
+    if final_state == "on":
+        # 最终状态为on，用户目前在上班，启动计时
+        clock_ins[user_id] = punch_time
+        print(f"User {user_id} final state: ON duty at {punch_time}, starting check thread.")
+        t = threading.Thread(target=check_and_notify, args=(user_id, punch_time))
+        t.start()
+    else:
+        # 最终状态为off，用户已下班
+        if user_id in clock_ins:
+            del clock_ins[user_id]
+            print(f"User {user_id} final state: OFF duty, removed from clock_ins.")
+        else:
+            print(f"User {user_id} final state: OFF duty but not found in clock_ins, no action needed.")
 
     return jsonify({"code": 0, "msg": "success"})
 

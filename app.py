@@ -47,7 +47,7 @@ def send_message(user_id, text):
 def check_and_notify(user_id, clock_in_time):
     # 等待5小时 (5*3600秒 = 18000秒)
     # 测试时可改成10秒：time.sleep(10)
-    time.sleep(5 * 3600)
+    time.sleep(10)
 
     if user_id in clock_ins:
         # 用户仍未下班

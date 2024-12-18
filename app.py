@@ -53,7 +53,7 @@ def check_and_notify(user_id, clock_in_time):
         # 用户仍未下班
         send_message(user_id, "您已经连续工作5小时，请尽快休息并下班打卡（如果需要）。")
 
-        HR_USER_ID = os.environ.get("HR_USER_ID", "HR_USER_ID")  # 替换为实际HR用户ID
+        HR_USER_ID = os.environ.get("gc5gb18e", "HR_USER_ID")  # 替换为实际HR用户ID
         send_message(HR_USER_ID, f"员工 {user_id} 已连续5小时未下班。")
 
 @app.route("/webhook", methods=["POST"])
@@ -70,7 +70,7 @@ def webhook():
     create_time_ms = header.get("create_time", 0)
     punch_time = int(create_time_ms) / 1000.0 if create_time_ms else time.time()
 
-    user_id = event.get("employee_id")
+    user_id = event.get("user_id")
     status_changes = event.get("status_changes", [])
 
     # 遍历状态变化，查找上班或下班打卡记录

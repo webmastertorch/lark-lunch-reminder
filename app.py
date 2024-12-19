@@ -52,31 +52,31 @@ def send_message(user_id, text):
     return resp_data
 
 def get_user_info(employee_id):
-    """根据 employee_id 获取用户信息，因为事件中是 employee_id，所以使用 user_id_type=employee_id"""
     url = f"https://open.larksuite.com/open-apis/contact/v3/users/{employee_id}?user_id_type=employee_id"
     headers = {
         "Authorization": f"Bearer {get_bot_access_token()}"
     }
     resp = requests.get(url, headers=headers)
-    return resp.json()
+    data = resp.json()
+    print("User info response:", data)
+    return data
 
-def check_and_notify(user_id, clock_in_time):
-    print(f"Check started for {user_id}, time: {clock_in_time}")
-    # 等待5小时（测试用10秒）
-    time.sleep(10)
-    if user_id in clock_ins:
-        print(f"User {user_id} still not off-duty, getting user name and sending reminder...")
-        # 获取用户姓名（这里的user_id其实是employee_id）
-        user_data = get_user_info(user_id)
+def check_and_notify(employee_id, clock_in_time):
+    print(f"Check started for {employee_id}, time: {clock_in_time}")
+    time.sleep(10)  # 测试用10秒，实际应为5小时
+    if employee_id in clock_ins:
+        print(f"User {employee_id} still not off-duty, getting user name and sending reminder...")
+        user_data = get_user_info(employee_id)
+        user_name = employee_id  # 默认用employee_id
         if user_data.get("code") == 0:
-            user_name = user_data["data"]["user"].get("name", user_id)
-        else:
-            user_name = user_id
+            user_info = user_data.get("data", {}).get("user", {})
+            # 尝试获取name或en_name
+            user_name = user_info.get("name") or user_info.get("en_name") or employee_id
 
-        send_message(user_id, "您已经连续工作5小时，请尽快休息并下班打卡(如果需要)。")
+        send_message(employee_id, "您已经连续工作5小时，请尽快休息并下班打卡(如果需要)。")
         send_message(HR_USER_ID, f"员工 {user_name} 已连续5小时未下班。")
     else:
-        print(f"User {user_id} is off-duty now, no reminder needed.")
+        print(f"User {employee_id} is off-duty now, no reminder needed.")
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -92,7 +92,6 @@ def webhook():
     create_time_ms = header.get("create_time", 0)
     punch_time = int(create_time_ms) / 1000.0 if create_time_ms else time.time()
 
-    # 注意：这里使用 employee_id，因为事件中提供的字段为 event["employee_id"]
     employee_id = event.get("employee_id")
     status_changes = event.get("status_changes", [])
 
@@ -119,13 +118,13 @@ def webhook():
         if first[0] == "on" and first[1] == "Normal":
             if second[0] == "off":
                 if second[1] == "":
-                    # 实为clock in
+                    # clock in
                     clock_ins[employee_id] = punch_time
                     print(f"User {employee_id} is actually clock in at index={max_index}, starting check thread.")
                     t = threading.Thread(target=check_and_notify, args=(employee_id, punch_time))
                     t.start()
                 elif second[1] == "Normal":
-                    # 实为clock out
+                    # clock out
                     if employee_id in clock_ins:
                         del clock_ins[employee_id]
                         print(f"User {employee_id} is actually clock out at index={max_index}, removed from clock_ins.")

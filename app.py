@@ -53,47 +53,53 @@ def send_message(user_id, text):
 
 def get_user_name_by_employee_id(employee_id):
     """
-    使用批量接口通过employee_id获取用户信息，从中获取user name。
-    文档参考：GET /open-apis/contact/v3/users/batch_get
+    使用GET /open-apis/contact/v3/users接口，通过employee_id搜索用户。
+    参数：employee_id_type=employee_id 和 user_id_type=user_id
     """
-    url = "https://open.larksuite.com/open-apis/contact/v3/users/batch_get"
+    url = "https://open.larksuite.com/open-apis/contact/v3/users"
     headers = {
         "Authorization": f"Bearer {get_bot_access_token()}"
     }
     params = {
-        "employee_ids": employee_id
+        "employee_id": employee_id,
+        "employee_id_type": "employee_id",
+        "user_id_type": "user_id"  # 返回user_id类型数据
     }
     resp = requests.get(url, headers=headers, params=params)
     data = resp.json()
-    print("Batch get user info response:", data)
+    print("User list response:", data)
 
-    # 返回数据格式参考文档，一般情况下:
+    # data结构参考官方文档，一般格式如下：
     # {
-    #   "code":0,
-    #   "msg":"ok",
-    #   "data":{
-    #       "user_infos":[
+    #   "code": 0,
+    #   "msg": "ok",
+    #   "data": {
+    #       "has_more": false,
+    #       "users": [
     #           {
-    #               "user_id":"...","employee_id":"...","name":"用户姓名",...
+    #               "user_id": "xxxx",
+    #               "name": "张三",
+    #               "en_name": "Zhang San",
+    #               ...
     #           }
     #       ]
-    #   }
+    #    }
     # }
+
     if data.get("code") == 0:
-        user_infos = data.get("data", {}).get("user_infos", [])
-        if user_infos:
-            return user_infos[0].get("name", employee_id)
+        users = data.get("data", {}).get("users", [])
+        if users:
+            return users[0].get("name", employee_id)
     return employee_id
 
 def check_and_notify(employee_id, clock_in_time):
     print(f"Check started for {employee_id}, time: {clock_in_time}")
-    time.sleep(10)  # 测试用10秒，实际应为5小时
+    # 等待5小时（测试用10秒）
+    time.sleep(10)
     if employee_id in clock_ins:
         print(f"User {employee_id} still not off-duty, getting user name...")
         user_name = get_user_name_by_employee_id(employee_id)
-        # 发送提醒给用户
         send_message(employee_id, "您已经连续工作5小时，请尽快休息并下班打卡(如果需要)。")
-        # 发送提醒给HR
         send_message(HR_USER_ID, f"员工 {user_name} 已连续5小时未下班。")
     else:
         print(f"User {employee_id} is off-duty now, no reminder needed.")

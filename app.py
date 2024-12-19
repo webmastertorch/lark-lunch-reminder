@@ -51,8 +51,11 @@ def send_message(user_id, text):
     print(f"Sending message to {user_id}: {resp_data}")
     return resp_data
 
-def get_user_info(employee_id):
-    """通过employee_id获取用户列表信息，返回items列表"""
+def get_user_name_by_employee_id(employee_id):
+    """
+    使用GET /open-apis/contact/v3/users接口，通过employee_id搜索用户。
+    返回的数据中包含多个用户，用user_id精确匹配employee_id，以获取正确用户的名字。
+    """
     url = "https://open.larksuite.com/open-apis/contact/v3/users"
     headers = {
         "Authorization": f"Bearer {get_bot_access_token()}"
@@ -65,70 +68,33 @@ def get_user_info(employee_id):
     resp = requests.get(url, headers=headers, params=params)
     data = resp.json()
     print("User list response:", data)
-    return data
 
-def get_user_name_by_employee_id(employee_id):
-    data = get_user_info(employee_id)
     if data.get("code") == 0:
         items = data.get("data", {}).get("items", [])
+        # 遍历 items ，找出 user_id == employee_id 的用户
         for user in items:
             if user.get("user_id") == employee_id:
                 return user.get("name", employee_id)
     return employee_id
 
-def get_user_locale_by_employee_id(employee_id):
-    """
-    尝试获取用户语言偏好。
-    假设返回数据中每个user包含'locale'字段(如'en_US','zh_CN')。
-    如果没有locale字段，可以根据是否有en_name来简单判断语言：
-    - 若有en_name不为空→英文
-    - 否则→中文
-    """
-    data = get_user_info(employee_id)
-    if data.get("code") == 0:
-        items = data.get("data", {}).get("items", [])
-        for user in items:
-            if user.get("user_id") == employee_id:
-                # 优先使用locale字段（示例：'en_US','zh_CN'等）
-                locale = user.get("locale")
-                if locale:
-                    if locale.startswith("en"):
-                        return "en"
-                    else:
-                        return "zh"
-                # 如果没有locale，则尝试用en_name判断
-                en_name = user.get("en_name", "")
-                if en_name.strip():
-                    return "en"
-                else:
-                    return "zh"
-    # 默认返回中文
-    return "zh"
-
 def check_and_notify(employee_id, clock_in_time):
     print(f"Check started for {employee_id}, time: {clock_in_time}")
     # 等待4.5小时 (4.5 * 3600 = 16200 秒)
-    time.sleep(10)
+    time.sleep(16200)
     if employee_id in clock_ins:
-        # 用户仍未下班
+        # 用户仍未下班，提醒员工(双语)
         print(f"User {employee_id} not off-duty after 4.5 hours, reminding user...")
-        user_locale = get_user_locale_by_employee_id(employee_id)
-        if user_locale == "en":
-            # 英文提示
-            send_message(employee_id, "You have been working for 4.5 hours. Please take a break and clock out if needed.")
-        else:
-            # 中文提示
-            send_message(employee_id, "您已经连续工作4.5小时，请尽快休息并下班打卡(如果需要)。")
+        employee_message = "您已经连续工作4.5小时，请尽快休息并下班打卡(如果需要)。\nYou have been working for 4.5 hours continuously. Please take a break and clock out if necessary."
+        send_message(employee_id, employee_message)
 
-        # 再等待0.5小时 (0.5 * 3600 = 1800秒), 总计5小时
-        time.sleep(10)
+        # 再等待0.5小时 (0.5 * 3600 = 1800 秒), 总计5小时
+        time.sleep(1800)
         if employee_id in clock_ins:
-            # 用户仍未下班
+            # 用户仍未下班，提醒HR(英文)
             print(f"User {employee_id} not off-duty after 5 hours, reminding HR...")
             user_name = get_user_name_by_employee_id(employee_id)
-            # HR 通知不需要语言切换，这里假设一直用中文。如需英文则同样根据HR的locale判断
-            # 这里假定HR_USER_ID固定语言，或者统一用中文
-            send_message(HR_USER_ID, f"员工 {user_name} 已连续5小时未下班。")
+            hr_message = f"Employee {user_name} has not clocked out after 5 hours of continuous work."
+            send_message(HR_USER_ID, hr_message)
         else:
             print(f"User {employee_id} off-duty within 0.5 hour after employee reminder, no HR reminder needed.")
     else:

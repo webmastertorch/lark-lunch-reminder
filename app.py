@@ -15,7 +15,7 @@ HR_USER_ID = os.environ.get("HR_USER_ID", "HR_USER_ID")
 
 BOT_ACCESS_TOKEN = None
 TOKEN_EXPIRY = 0
-TARGET_DEPT_ID = "od-d426edf9693be928abbec635cb290358"
+TARGET_DEPT_ID = "8egg27ff74c9ec8a"
 
 def get_bot_access_token():
     global BOT_ACCESS_TOKEN, TOKEN_EXPIRY
@@ -41,17 +41,12 @@ def send_message(user_id, text):
         "Content-Type": "application/json"
     }
     safe_text = text.replace("（", "(").replace("）", ")")
-
-    # 根据 Lark 文档，content 必须是 json 字符串
-    # 先用 json.dumps 将 {"text": safe_text} 转成字符串，然后再塞入 payload 的 content 字段中
     content_str = json.dumps({"text": safe_text})
-
     payload = {
         "receive_id": user_id,
         "msg_type": "text",
         "content": content_str
     }
-
     response = requests.post(url, headers=headers, json=payload)
     resp_data = response.json()
     print(f"Sending message to {user_id}: {resp_data}")
@@ -67,7 +62,6 @@ def get_user_info(user_id):
     return data
 
 def check_user_department(user_id):
-    """检查用户所在部门ID是否包含TARGET_DEPT_ID。"""
     user_data = get_user_info(user_id)
     if user_data.get("code") != 0:
         print(f"Failed to get user info for {user_id}, response: {user_data}")
@@ -78,16 +72,25 @@ def check_user_department(user_id):
     print(f"User {user_id} departments: {dept_ids}")
     return TARGET_DEPT_ID in dept_ids
 
+def get_user_name(user_id):
+    user_data = get_user_info(user_id)
+    if user_data.get("code") == 0:
+        user_info = user_data.get("data", {}).get("user", {})
+        return user_info.get("name", user_id)  # 如果没有name字段，则退化为使用user_id
+    else:
+        print(f"Failed to get user name for {user_id}, using user_id instead.")
+        return user_id
+
 def check_and_notify(user_id, clock_in_time):
     print(f"Check started for {user_id}, time: {clock_in_time}")
-    time.sleep(10)
+    time.sleep(10)  # 测试时短一些，实际应为5*3600秒
     if user_id in clock_ins:
         print(f"User {user_id} still not off-duty, checking department before sending reminder...")
-        # 在发送消息前检查部门ID
         if check_user_department(user_id):
             print(f"User {user_id} is in target department {TARGET_DEPT_ID}, sending reminder...")
+            user_name = get_user_name(user_id)  # 获取用户名
             send_message(user_id, "您已经连续工作5小时，请尽快休息并下班打卡(如果需要)。")
-            send_message(HR_USER_ID, f"员工 {user_id} 已连续5小时未下班。")
+            send_message(HR_USER_ID, f"员工 {user_name} 已连续5小时未下班。")
         else:
             print(f"User {user_id} is not in department {TARGET_DEPT_ID}, no message sent.")
     else:

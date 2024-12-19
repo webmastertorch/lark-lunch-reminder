@@ -77,28 +77,33 @@ def get_user_name_by_employee_id(employee_id):
                 return user.get("name", employee_id)
     return employee_id
 
-def check_and_notify(employee_id, clock_in_time):
-    print(f"Check started for {employee_id}, time: {clock_in_time}")
-    # 等待4.5小时 (4.5 * 3600 = 16200 秒)
+def check_and_notify(employee_id, start_time):
+    print(f"Check started for {employee_id}, time: {start_time}")
+    # 首先等待4.5小时 (4.5 * 3600 = 16200 秒)
     time.sleep(16200)
+    # 检查当前场景是否一致
     if employee_id in clock_ins:
-        # 用户仍未下班，提醒员工(英文在前，中文在后)
-        print(f"User {employee_id} not off-duty after 4.5 hours, reminding user...")
-        employee_message = "You have been working for 4.5 hours continuously. Please take a break and clock out if necessary.\n您已经连续工作4.5小时，请尽快休息并下班打卡(如果需要)。"
-        send_message(employee_id, employee_message)
+        # 对比当前记录的时间和初始场景时间
+        if clock_ins[employee_id] == start_time:
+            # 用户仍未下班，提醒员工(英文在前，中文在后)
+            print(f"User {employee_id} not off-duty after 4.5 hours, reminding user...")
+            employee_message = "You have been working for 4.5 hours continuously. Please take a break and clock out if necessary.\n您已经连续工作4.5小时，请尽快休息并下班打卡(如果需要)。"
+            send_message(employee_id, employee_message)
 
-        # 再等待0.5小时 (0.5 * 3600 = 1800 秒), 总计5小时
-        time.sleep(1800)
-        if employee_id in clock_ins:
-            # 用户仍未下班，提醒HR(英文)
-            print(f"User {employee_id} not off-duty after 5 hours, reminding HR...")
-            user_name = get_user_name_by_employee_id(employee_id)
-            hr_message = f"Employee {user_name} has not clocked out after 5 hours of continuous work."
-            send_message(HR_USER_ID, hr_message)
+            # 再等待0.5小时 (0.5 * 3600 = 1800 秒), 总计5小时
+            time.sleep(1800)
+            if employee_id in clock_ins and clock_ins[employee_id] == start_time:
+                # 用户仍未下班，提醒HR(英文)
+                print(f"User {employee_id} not off-duty after 5 hours, reminding HR...")
+                user_name = get_user_name_by_employee_id(employee_id)
+                hr_message = f"Employee {user_name} has not clocked out after 5 hours of continuous work."
+                send_message(HR_USER_ID, hr_message)
+            else:
+                print(f"User {employee_id} off-duty within 0.5 hour after employee reminder or scenario changed, no HR reminder needed.")
         else:
-            print(f"User {employee_id} off-duty within 0.5 hour after employee reminder, no HR reminder needed.")
+            print(f"Scenario changed for user {employee_id}, no reminder needed.")
     else:
-        print(f"User {employee_id} off-duty before 4.5 hours, no reminders needed.")
+        print(f"User {employee_id} is off-duty or scenario changed, no reminders needed at 4.5 hours check.")
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -138,20 +143,22 @@ def webhook():
         first = records[0]  # (on, Normal)
         second = records[1] # (off, '' or Normal)
         if first[0] == "on" and first[1] == "Normal":
+            # 确认为上班打卡场景
             if second[0] == "off":
                 if second[1] == "":
-                    # 实为上班打卡
+                    # 上班打卡
                     clock_ins[employee_id] = punch_time
                     print(f"User {employee_id} is actually clock in at index={max_index}, starting check thread.")
+                    # 将punch_time作为场景标识传入线程
                     t = threading.Thread(target=check_and_notify, args=(employee_id, punch_time))
                     t.start()
                 elif second[1] == "Normal":
-                    # 实为下班打卡
+                    # 下班打卡
                     if employee_id in clock_ins:
                         del clock_ins[employee_id]
                         print(f"User {employee_id} is actually clock out at index={max_index}, removed from clock_ins.")
                     else:
-                        print(f"User {employee_id} is actually clock out at index={max_index}, but not in clock_ins.")
+                        print(f"User {employee_id} clock out but not in clock_ins, no action.")
                 else:
                     print(f"User {employee_id} at index={max_index}, off status unexpected: {second[1]}")
             else:

@@ -15,7 +15,7 @@ HR_USER_ID = os.environ.get("HR_USER_ID", "HR_USER_ID")
 
 BOT_ACCESS_TOKEN = None
 TOKEN_EXPIRY = 0
-TARGET_DEPT_ID = "8egg27ff74c9ec8a"
+TARGET_DEPT_ID = "od-d426edf9693be928abbec635cb290358"
 
 def get_bot_access_token():
     global BOT_ACCESS_TOKEN, TOKEN_EXPIRY

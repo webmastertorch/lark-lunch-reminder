@@ -13,12 +13,9 @@ APP_ID = os.environ.get("APP_ID", "YOUR_APP_ID")
 APP_SECRET = os.environ.get("APP_SECRET", "YOUR_APP_SECRET")
 HR_USER_ID = os.environ.get("HR_USER_ID", "HR_USER_ID")
 
-# 新增：从环境变量中获取 user_access_token（请根据实际情况提供）
-USER_ACCESS_TOKEN = os.environ.get("USER_ACCESS_TOKEN", "YOUR_USER_ACCESS_TOKEN")
-
 BOT_ACCESS_TOKEN = None
 TOKEN_EXPIRY = 0
-TARGET_DEPT_ID = "od-d426edf9693be928abbec635cb290358"
+TARGET_DEPT_ID = "8egg27ff74c9ec8a"
 
 def get_bot_access_token():
     global BOT_ACCESS_TOKEN, TOKEN_EXPIRY
@@ -55,64 +52,50 @@ def send_message(user_id, text):
     print(f"Sending message to {user_id}: {resp_data}")
     return resp_data
 
-def get_user_info_by_user_access_token():
-    """
-    使用 user_access_token 获取登录用户的信息
-    根据你提供的接口说明：
-    GET https://open.feishu.cn/connect/qrconnect/oauth2/user_info/
-    Header:
-        Authorization: Bearer <user_access_token>
-    返回数据示例：
-    {
-        "AvatarUrl":"https://open.feishu.cn/avatar/zhangsan",
-        "Name": "zhangsan",
-        "Email": "zhangsan@gmail.com",
-        "Status": 0,
-        "EmployeeID":"5d9bdxx",
-        "Mobile":"+86130xxx"
-    }
-    """
-    url = "https://open.feishu.cn/connect/qrconnect/oauth2/user_info/"
+def get_user_info(employee_id):
+    # 注意这里将 user_id_type 改为 employee_id，因为事件中提供的是 employee_id
+    url = f"https://open.larksuite.com/open-apis/contact/v3/users/{employee_id}?user_id_type=employee_id"
     headers = {
-        "Authorization": f"Bearer {USER_ACCESS_TOKEN}",
-        "Content-Type": "application/json"
+        "Authorization": f"Bearer {get_bot_access_token()}"
     }
     resp = requests.get(url, headers=headers)
     data = resp.json()
     return data
 
-def get_user_name():
-    """
-    使用上面的接口获取用户信息，从中提取 Name 字段作为用户名
-    """
-    user_data = get_user_info_by_user_access_token()
-    # 假设正常返回并有 Name 字段
-    return user_data.get("Name", "未知用户")
+def check_user_department(employee_id):
+    user_data = get_user_info(employee_id)
+    if user_data.get("code") != 0:
+        print(f"Failed to get user info for {employee_id}, response: {user_data}")
+        return False
 
-def check_user_department(user_id):
-    """
-    原本的部门检查逻辑，如需保留请根据实际情况实现。
-    此处为占位符，假定始终返回 True。
-    实际使用中如果需要根据employee_id或其他信息判断部门，需要调用相应接口。
-    """
-    # TODO: 实现部门判断逻辑
-    # 由于本次主要关注获取用户名，这里简单返回True
-    return True
+    user_info = user_data.get("data", {}).get("user", {})
+    dept_ids = user_info.get("department_ids", [])
+    print(f"User {employee_id} departments: {dept_ids}")
+    return TARGET_DEPT_ID in dept_ids
 
-def check_and_notify(user_id, clock_in_time):
-    print(f"Check started for {user_id}, time: {clock_in_time}")
-    time.sleep(10)  # 测试环境下10秒，正式使用5小时
-    if user_id in clock_ins:
-        print(f"User {user_id} still not off-duty, checking department before sending reminder...")
-        if check_user_department(user_id):
-            print(f"User {user_id} is in target department {TARGET_DEPT_ID}, sending reminder...")
-            user_name = get_user_name()  # 使用user_access_token获取用户名
-            send_message(user_id, "您已经连续工作5小时，请尽快休息并下班打卡(如果需要)。")
+def get_user_name(employee_id):
+    user_data = get_user_info(employee_id)
+    if user_data.get("code") == 0:
+        user_info = user_data.get("data", {}).get("user", {})
+        return user_info.get("name", employee_id)  
+    else:
+        print(f"Failed to get user name for {employee_id}, using employee_id instead.")
+        return employee_id
+
+def check_and_notify(employee_id, clock_in_time):
+    print(f"Check started for {employee_id}, time: {clock_in_time}")
+    time.sleep(10)  # 测试时短一点，正式环境改回5小时：time.sleep(5*3600)
+    if employee_id in clock_ins:
+        print(f"User {employee_id} still not off-duty, checking department before sending reminder...")
+        if check_user_department(employee_id):
+            print(f"User {employee_id} is in target department {TARGET_DEPT_ID}, sending reminder...")
+            user_name = get_user_name(employee_id)  # 获取用户名称
+            send_message(employee_id, "您已经连续工作5小时，请尽快休息并下班打卡(如果需要)。")
             send_message(HR_USER_ID, f"员工 {user_name} 已连续5小时未下班。")
         else:
-            print(f"User {user_id} is not in department {TARGET_DEPT_ID}, no message sent.")
+            print(f"User {employee_id} is not in department {TARGET_DEPT_ID}, no message sent.")
     else:
-        print(f"User {user_id} is off-duty now, no reminder needed.")
+        print(f"User {employee_id} is off-duty now, no reminder needed.")
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -128,7 +111,8 @@ def webhook():
     create_time_ms = header.get("create_time", 0)
     punch_time = int(create_time_ms) / 1000.0 if create_time_ms else time.time()
 
-    user_id = event.get("employee_id")
+    # 注意：事件字段中是 employee_id 而非 user_id
+    employee_id = event.get("employee_id")
     status_changes = event.get("status_changes", [])
 
     index_map = {}
@@ -136,13 +120,13 @@ def webhook():
         idx = change.get("index")
         work_type = change.get("work_type")
         current_status = change.get("current_status", "")
-        print(f"Found work_type={work_type}, current_status={current_status} for user {user_id} at index={idx}")
+        print(f"Found work_type={work_type}, current_status={current_status} for user {employee_id} at index={idx}")
         if idx not in index_map:
             index_map[idx] = []
         index_map[idx].append((work_type, current_status))
 
     if not index_map:
-        print(f"User {user_id} no index data, no action.")
+        print(f"User {employee_id} no index data, no action.")
         return jsonify({"code": 0, "msg": "success"})
 
     max_index = max(index_map.keys())
@@ -155,25 +139,25 @@ def webhook():
             if second[0] == "off":
                 if second[1] == "":
                     # 实为clock in
-                    clock_ins[user_id] = punch_time
-                    print(f"User {user_id} is actually clock in at index={max_index}, starting check thread.")
-                    t = threading.Thread(target=check_and_notify, args=(user_id, punch_time))
+                    clock_ins[employee_id] = punch_time
+                    print(f"User {employee_id} is actually clock in at index={max_index}, starting check thread.")
+                    t = threading.Thread(target=check_and_notify, args=(employee_id, punch_time))
                     t.start()
                 elif second[1] == "Normal":
                     # 实为clock out
-                    if user_id in clock_ins:
-                        del clock_ins[user_id]
-                        print(f"User {user_id} is actually clock out at index={max_index}, removed from clock_ins.")
+                    if employee_id in clock_ins:
+                        del clock_ins[employee_id]
+                        print(f"User {employee_id} is actually clock out at index={max_index}, removed from clock_ins.")
                     else:
-                        print(f"User {user_id} is actually clock out at index={max_index}, but not in clock_ins.")
+                        print(f"User {employee_id} is actually clock out at index={max_index}, but not in clock_ins.")
                 else:
-                    print(f"User {user_id} at index={max_index}, off status unexpected: {second[1]}")
+                    print(f"User {employee_id} at index={max_index}, off status unexpected: {second[1]}")
             else:
-                print(f"User {user_id} at index={max_index}, second record not off: {second}")
+                print(f"User {employee_id} at index={max_index}, second record not off: {second}")
         else:
-            print(f"User {user_id} at index={max_index}, first record not (on, Normal): {first}")
+            print(f"User {employee_id} at index={max_index}, first record not (on, Normal): {first}")
     else:
-        print(f"User {user_id} at index={max_index} has unexpected record count: {len(records)}")
+        print(f"User {employee_id} at index={max_index} has unexpected record count: {len(records)}")
 
     return jsonify({"code": 0, "msg": "success"})
 

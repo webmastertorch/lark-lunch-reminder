@@ -82,9 +82,9 @@ def check_and_notify(employee_id, clock_in_time):
     # 等待4.5小时 (4.5 * 3600 = 16200 秒)
     time.sleep(10)
     if employee_id in clock_ins:
-        # 用户仍未下班，提醒员工(双语)
+        # 用户仍未下班，提醒员工(英文在前，中文在后)
         print(f"User {employee_id} not off-duty after 4.5 hours, reminding user...")
-        employee_message = "您已经连续工作4.5小时，请尽快休息并下班打卡(如果需要)。\nYou have been working for 4.5 hours continuously. Please take a break and clock out if necessary."
+        employee_message = "You have been working for 4.5 hours continuously. Please take a break and clock out if necessary.\n您已经连续工作4.5小时，请尽快休息并下班打卡(如果需要)。"
         send_message(employee_id, employee_message)
 
         # 再等待0.5小时 (0.5 * 3600 = 1800 秒), 总计5小时

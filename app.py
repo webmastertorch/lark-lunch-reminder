@@ -54,7 +54,7 @@ def send_message(user_id, text):
 def get_user_name_by_employee_id(employee_id):
     """
     使用GET /open-apis/contact/v3/users接口，通过employee_id搜索用户。
-    参数：employee_id_type=employee_id 和 user_id_type=user_id
+    返回数据中有 data["items"] 列表，其中包含匹配的用户信息。
     """
     url = "https://open.larksuite.com/open-apis/contact/v3/users"
     headers = {
@@ -69,33 +69,21 @@ def get_user_name_by_employee_id(employee_id):
     data = resp.json()
     print("User list response:", data)
 
-    # data结构参考官方文档，一般格式如下：
-    # {
-    #   "code": 0,
-    #   "msg": "ok",
-    #   "data": {
-    #       "has_more": false,
-    #       "users": [
-    #           {
-    #               "user_id": "xxxx",
-    #               "name": "张三",
-    #               "en_name": "Zhang San",
-    #               ...
-    #           }
-    #       ]
-    #    }
-    # }
-
+    # 根据实际返回结构，现在是 data["data"]["items"]
     if data.get("code") == 0:
-        users = data.get("data", {}).get("users", [])
-        if users:
-            return users[0].get("name", employee_id)
+        items = data.get("data", {}).get("items", [])
+        # items是一个列表，里面每个元素是一个用户字典
+        # 找到与 employee_id 对应的那个用户
+        for user in items:
+            # user里有 user_id, name等字段
+            # 假设 employee_id 即与请求的相同用户，只取第一个匹配即可
+            if user.get("user_id") == employee_id or user.get("name"):
+                return user.get("name", employee_id)
     return employee_id
 
 def check_and_notify(employee_id, clock_in_time):
     print(f"Check started for {employee_id}, time: {clock_in_time}")
-    # 等待5小时（测试用10秒）
-    time.sleep(10)
+    time.sleep(10)  # 测试用10秒，实际应为5小时
     if employee_id in clock_ins:
         print(f"User {employee_id} still not off-duty, getting user name...")
         user_name = get_user_name_by_employee_id(employee_id)

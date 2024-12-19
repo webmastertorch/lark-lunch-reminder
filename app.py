@@ -51,29 +51,49 @@ def send_message(user_id, text):
     print(f"Sending message to {user_id}: {resp_data}")
     return resp_data
 
-def get_user_info(employee_id):
-    url = f"https://open.larksuite.com/open-apis/contact/v3/users/{employee_id}?user_id_type=employee_id"
+def get_user_name_by_employee_id(employee_id):
+    """
+    使用批量接口通过employee_id获取用户信息，从中获取user name。
+    文档参考：GET /open-apis/contact/v3/users/batch_get
+    """
+    url = "https://open.larksuite.com/open-apis/contact/v3/users/batch_get"
     headers = {
         "Authorization": f"Bearer {get_bot_access_token()}"
     }
-    resp = requests.get(url, headers=headers)
+    params = {
+        "employee_ids": employee_id
+    }
+    resp = requests.get(url, headers=headers, params=params)
     data = resp.json()
-    print("User info response:", data)
-    return data
+    print("Batch get user info response:", data)
+
+    # 返回数据格式参考文档，一般情况下:
+    # {
+    #   "code":0,
+    #   "msg":"ok",
+    #   "data":{
+    #       "user_infos":[
+    #           {
+    #               "user_id":"...","employee_id":"...","name":"用户姓名",...
+    #           }
+    #       ]
+    #   }
+    # }
+    if data.get("code") == 0:
+        user_infos = data.get("data", {}).get("user_infos", [])
+        if user_infos:
+            return user_infos[0].get("name", employee_id)
+    return employee_id
 
 def check_and_notify(employee_id, clock_in_time):
     print(f"Check started for {employee_id}, time: {clock_in_time}")
     time.sleep(10)  # 测试用10秒，实际应为5小时
     if employee_id in clock_ins:
-        print(f"User {employee_id} still not off-duty, getting user name and sending reminder...")
-        user_data = get_user_info(employee_id)
-        user_name = employee_id  # 默认用employee_id
-        if user_data.get("code") == 0:
-            user_info = user_data.get("data", {}).get("user", {})
-            # 尝试获取name或en_name
-            user_name = user_info.get("name") or user_info.get("en_name") or employee_id
-
+        print(f"User {employee_id} still not off-duty, getting user name...")
+        user_name = get_user_name_by_employee_id(employee_id)
+        # 发送提醒给用户
         send_message(employee_id, "您已经连续工作5小时，请尽快休息并下班打卡(如果需要)。")
+        # 发送提醒给HR
         send_message(HR_USER_ID, f"员工 {user_name} 已连续5小时未下班。")
     else:
         print(f"User {employee_id} is off-duty now, no reminder needed.")
@@ -118,13 +138,13 @@ def webhook():
         if first[0] == "on" and first[1] == "Normal":
             if second[0] == "off":
                 if second[1] == "":
-                    # clock in
+                    # 实为clock in
                     clock_ins[employee_id] = punch_time
                     print(f"User {employee_id} is actually clock in at index={max_index}, starting check thread.")
                     t = threading.Thread(target=check_and_notify, args=(employee_id, punch_time))
                     t.start()
                 elif second[1] == "Normal":
-                    # clock out
+                    # 实为clock out
                     if employee_id in clock_ins:
                         del clock_ins[employee_id]
                         print(f"User {employee_id} is actually clock out at index={max_index}, removed from clock_ins.")

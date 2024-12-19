@@ -16,6 +16,8 @@ HR_USER_ID = os.environ.get("HR_USER_ID", "HR_USER_ID")
 BOT_ACCESS_TOKEN = None
 TOKEN_EXPIRY = 0
 
+TARGET_DEPT_ID = "8egg27ff74c9ec8a"  # 要验证的部门ID
+
 def get_bot_access_token():
     global BOT_ACCESS_TOKEN, TOKEN_EXPIRY
     current_time = int(time.time())
@@ -60,21 +62,10 @@ def get_user_info(user_id):
     }
     resp = requests.get(url, headers=headers)
     data = resp.json()
-    # data示例结构请参考Lark文档
-    # 假设成功时 data["data"]["user"]["department_ids"] 列表中包含部门ID
     return data
 
-def get_department_info(dept_id):
-    """根据 department_id 获取部门信息，返回部门详情。"""
-    url = f"https://open.larksuite.com/open-apis/contact/v3/departments/{dept_id}"
-    headers = {
-        "Authorization": f"Bearer {get_bot_access_token()}"
-    }
-    resp = requests.get(url, headers=headers)
-    return resp.json()
-
 def check_user_department(user_id):
-    """检查用户所在部门是否存在名称为'WH3768'的部门。"""
+    """检查用户所在部门ID是否包含TARGET_DEPT_ID。"""
     user_data = get_user_info(user_id)
     if user_data.get("code") != 0:
         print(f"Failed to get user info for {user_id}, response: {user_data}")
@@ -84,27 +75,21 @@ def check_user_department(user_id):
     dept_ids = user_info.get("department_ids", [])
     print(f"User {user_id} departments: {dept_ids}")
 
-    for dept_id in dept_ids:
-        dept_data = get_department_info(dept_id)
-        if dept_data.get("code") == 0:
-            dept_name = dept_data.get("data", {}).get("department", {}).get("name", "")
-            print(f"Check dept_id={dept_id}, name={dept_name}")
-            if dept_name == "WH3768":
-                return True
-    return False
+    # 直接检查部门ID列表是否包含目标部门ID
+    return TARGET_DEPT_ID in dept_ids
 
 def check_and_notify(user_id, clock_in_time):
     print(f"Check started for {user_id}, time: {clock_in_time}")
     time.sleep(10)
     if user_id in clock_ins:
         print(f"User {user_id} still not off-duty, checking department before sending reminder...")
-        # 在发送消息前检查部门
+        # 在发送消息前检查部门ID
         if check_user_department(user_id):
-            print(f"User {user_id} is in WH3768, sending reminder...")
+            print(f"User {user_id} is in target department {TARGET_DEPT_ID}, sending reminder...")
             send_message(user_id, "您已经连续工作5小时，请尽快休息并下班打卡(如果需要)。")
             send_message(HR_USER_ID, f"员工 {user_id} 已连续5小时未下班。")
         else:
-            print(f"User {user_id} is not in WH3768 department, no message sent.")
+            print(f"User {user_id} is not in department {TARGET_DEPT_ID}, no message sent.")
     else:
         print(f"User {user_id} is off-duty now, no reminder needed.")
 

@@ -15,7 +15,6 @@ HR_USER_ID = os.environ.get("HR_USER_ID", "HR_USER_ID")
 
 BOT_ACCESS_TOKEN = None
 TOKEN_EXPIRY = 0
-TARGET_DEPT_ID = "8egg27ff74c9ec8a"
 
 def get_bot_access_token():
     global BOT_ACCESS_TOKEN, TOKEN_EXPIRY
@@ -52,50 +51,35 @@ def send_message(user_id, text):
     print(f"Sending message to {user_id}: {resp_data}")
     return resp_data
 
-def get_user_info(employee_id):
-    # 注意这里将 user_id_type 改为 employee_id，因为事件中提供的是 employee_id
-    url = f"https://open.larksuite.com/open-apis/contact/v3/users/{employee_id}?user_id_type=employee_id"
+def get_user_info(user_id):
+    """根据 user_id 获取用户信息，返回用户数据字典"""
+    url = f"https://open.larksuite.com/open-apis/contact/v3/users/{user_id}?user_id_type=user_id"
     headers = {
         "Authorization": f"Bearer {get_bot_access_token()}"
     }
     resp = requests.get(url, headers=headers)
-    data = resp.json()
-    return data
+    return resp.json()
 
-def check_user_department(employee_id):
-    user_data = get_user_info(employee_id)
-    if user_data.get("code") != 0:
-        print(f"Failed to get user info for {employee_id}, response: {user_data}")
-        return False
-
-    user_info = user_data.get("data", {}).get("user", {})
-    dept_ids = user_info.get("department_ids", [])
-    print(f"User {employee_id} departments: {dept_ids}")
-    return TARGET_DEPT_ID in dept_ids
-
-def get_user_name(employee_id):
-    user_data = get_user_info(employee_id)
-    if user_data.get("code") == 0:
-        user_info = user_data.get("data", {}).get("user", {})
-        return user_info.get("name", employee_id)  
-    else:
-        print(f"Failed to get user name for {employee_id}, using employee_id instead.")
-        return employee_id
-
-def check_and_notify(employee_id, clock_in_time):
-    print(f"Check started for {employee_id}, time: {clock_in_time}")
-    time.sleep(10)  # 测试时短一点，正式环境改回5小时：time.sleep(5*3600)
-    if employee_id in clock_ins:
-        print(f"User {employee_id} still not off-duty, checking department before sending reminder...")
-        if check_user_department(employee_id):
-            print(f"User {employee_id} is in target department {TARGET_DEPT_ID}, sending reminder...")
-            user_name = get_user_name(employee_id)  # 获取用户名称
-            send_message(employee_id, "您已经连续工作5小时，请尽快休息并下班打卡(如果需要)。")
-            send_message(HR_USER_ID, f"员工 {user_name} 已连续5小时未下班。")
+def check_and_notify(user_id, clock_in_time):
+    print(f"Check started for {user_id}, time: {clock_in_time}")
+    # 等待5小时（测试时可用10秒验证，正式使用应为5*3600）
+    time.sleep(10)
+    if user_id in clock_ins:
+        print(f"User {user_id} still not off-duty, getting user name and sending reminder...")
+        # 获取用户姓名
+        user_data = get_user_info(user_id)
+        if user_data.get("code") == 0:
+            user_name = user_data["data"]["user"].get("name", user_id)  # 如果没有name，用user_id代替
         else:
-            print(f"User {employee_id} is not in department {TARGET_DEPT_ID}, no message sent.")
+            user_name = user_id
+
+        # 发送提醒给用户
+        send_message(user_id, "您已经连续工作5小时，请尽快休息并下班打卡(如果需要)。")
+
+        # 发送提醒给HR，使用用户姓名
+        send_message(HR_USER_ID, f"员工 {user_name} 已连续5小时未下班。")
     else:
-        print(f"User {employee_id} is off-duty now, no reminder needed.")
+        print(f"User {user_id} is off-duty now, no reminder needed.")
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -111,8 +95,7 @@ def webhook():
     create_time_ms = header.get("create_time", 0)
     punch_time = int(create_time_ms) / 1000.0 if create_time_ms else time.time()
 
-    # 注意：事件字段中是 employee_id 而非 user_id
-    employee_id = event.get("employee_id")
+    user_id = event.get("employee_id")
     status_changes = event.get("status_changes", [])
 
     index_map = {}
@@ -120,18 +103,19 @@ def webhook():
         idx = change.get("index")
         work_type = change.get("work_type")
         current_status = change.get("current_status", "")
-        print(f"Found work_type={work_type}, current_status={current_status} for user {employee_id} at index={idx}")
+        print(f"Found work_type={work_type}, current_status={current_status} for user {user_id} at index={idx}")
         if idx not in index_map:
             index_map[idx] = []
         index_map[idx].append((work_type, current_status))
 
     if not index_map:
-        print(f"User {employee_id} no index data, no action.")
+        print(f"User {user_id} no index data, no action.")
         return jsonify({"code": 0, "msg": "success"})
 
     max_index = max(index_map.keys())
     records = index_map[max_index]
 
+    # 按照之前逻辑判断clock in和clock out
     if len(records) == 2:
         first = records[0]  # (on, Normal)
         second = records[1] # (off, '' or Normal)
@@ -139,25 +123,25 @@ def webhook():
             if second[0] == "off":
                 if second[1] == "":
                     # 实为clock in
-                    clock_ins[employee_id] = punch_time
-                    print(f"User {employee_id} is actually clock in at index={max_index}, starting check thread.")
-                    t = threading.Thread(target=check_and_notify, args=(employee_id, punch_time))
+                    clock_ins[user_id] = punch_time
+                    print(f"User {user_id} is actually clock in at index={max_index}, starting check thread.")
+                    t = threading.Thread(target=check_and_notify, args=(user_id, punch_time))
                     t.start()
                 elif second[1] == "Normal":
                     # 实为clock out
-                    if employee_id in clock_ins:
-                        del clock_ins[employee_id]
-                        print(f"User {employee_id} is actually clock out at index={max_index}, removed from clock_ins.")
+                    if user_id in clock_ins:
+                        del clock_ins[user_id]
+                        print(f"User {user_id} is actually clock out at index={max_index}, removed from clock_ins.")
                     else:
-                        print(f"User {employee_id} is actually clock out at index={max_index}, but not in clock_ins.")
+                        print(f"User {user_id} is actually clock out at index={max_index}, but not in clock_ins.")
                 else:
-                    print(f"User {employee_id} at index={max_index}, off status unexpected: {second[1]}")
+                    print(f"User {user_id} at index={max_index}, off status unexpected: {second[1]}")
             else:
-                print(f"User {employee_id} at index={max_index}, second record not off: {second}")
+                print(f"User {user_id} at index={max_index}, second record not off: {second}")
         else:
-            print(f"User {employee_id} at index={max_index}, first record not (on, Normal): {first}")
+            print(f"User {user_id} at index={max_index}, first record not (on, Normal): {first}")
     else:
-        print(f"User {employee_id} at index={max_index} has unexpected record count: {len(records)}")
+        print(f"User {user_id} at index={max_index} has unexpected record count: {len(records)}")
 
     return jsonify({"code": 0, "msg": "success"})
 

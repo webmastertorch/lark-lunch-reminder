@@ -80,7 +80,7 @@ def get_user_name_by_employee_id(employee_id):
 def check_and_notify(employee_id, clock_in_time):
     print(f"Check started for {employee_id}, time: {clock_in_time}")
     # 等待4.5小时 (4.5 * 3600 = 16200 秒)
-    time.sleep(16200)
+    time.sleep(10)
     if employee_id in clock_ins:
         # 用户仍未下班，提醒员工(双语)
         print(f"User {employee_id} not off-duty after 4.5 hours, reminding user...")
@@ -88,7 +88,7 @@ def check_and_notify(employee_id, clock_in_time):
         send_message(employee_id, employee_message)
 
         # 再等待0.5小时 (0.5 * 3600 = 1800 秒), 总计5小时
-        time.sleep(1800)
+        time.sleep(10)
         if employee_id in clock_ins:
             # 用户仍未下班，提醒HR(英文)
             print(f"User {employee_id} not off-duty after 5 hours, reminding HR...")

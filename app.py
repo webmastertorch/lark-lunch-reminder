@@ -54,7 +54,6 @@ def send_message(user_id, text):
 def get_user_name_by_employee_id(employee_id):
     """
     使用GET /open-apis/contact/v3/users接口，通过employee_id搜索用户。
-    返回数据中有 data["items"] 列表，其中包含匹配的用户信息。
     """
     url = "https://open.larksuite.com/open-apis/contact/v3/users"
     headers = {
@@ -63,34 +62,40 @@ def get_user_name_by_employee_id(employee_id):
     params = {
         "employee_id": employee_id,
         "employee_id_type": "employee_id",
-        "user_id_type": "user_id"  # 返回user_id类型数据
+        "user_id_type": "user_id"
     }
     resp = requests.get(url, headers=headers, params=params)
     data = resp.json()
     print("User list response:", data)
 
-    # 根据实际返回结构，现在是 data["data"]["items"]
     if data.get("code") == 0:
         items = data.get("data", {}).get("items", [])
-        # items是一个列表，里面每个元素是一个用户字典
-        # 找到与 employee_id 对应的那个用户
         for user in items:
-            # user里有 user_id, name等字段
-            # 假设 employee_id 即与请求的相同用户，只取第一个匹配即可
+            # 优先获取与employee_id匹配的用户名称
             if user.get("user_id") == employee_id or user.get("name"):
                 return user.get("name", employee_id)
     return employee_id
 
 def check_and_notify(employee_id, clock_in_time):
     print(f"Check started for {employee_id}, time: {clock_in_time}")
-    time.sleep(10)  # 测试用10秒，实际应为5小时
+    # 首先等待4.5小时(4.5 * 3600 = 16200秒)
+    time.sleep(10)
     if employee_id in clock_ins:
-        print(f"User {employee_id} still not off-duty, getting user name...")
-        user_name = get_user_name_by_employee_id(employee_id)
-        send_message(employee_id, "您已经连续工作5小时，请尽快休息并下班打卡(如果需要)。")
-        send_message(HR_USER_ID, f"员工 {user_name} 已连续5小时未下班。")
+        # 用户仍未下班，提醒员工
+        print(f"User {employee_id} not off-duty after 4.5 hours, reminding user...")
+        send_message(employee_id, "您已经连续工作4.5小时，请尽快休息并下班打卡(如果需要)。")
+
+        # 再等待0.5小时(0.5 * 3600 = 1800秒)共计5小时
+        time.sleep(10)
+        if employee_id in clock_ins:
+            # 用户仍未下班，提醒HR
+            print(f"User {employee_id} not off-duty after 5 hours, reminding HR...")
+            user_name = get_user_name_by_employee_id(employee_id)
+            send_message(HR_USER_ID, f"员工 {user_name} 已连续5小时未下班。")
+        else:
+            print(f"User {employee_id} off-duty within the last 0.5 hour, no HR reminder needed.")
     else:
-        print(f"User {employee_id} is off-duty now, no reminder needed.")
+        print(f"User {employee_id} off-duty before 4.5 hours, no reminders needed.")
 
 @app.route("/webhook", methods=["POST"])
 def webhook():

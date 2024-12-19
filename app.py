@@ -54,6 +54,7 @@ def send_message(user_id, text):
 def get_user_name_by_employee_id(employee_id):
     """
     使用GET /open-apis/contact/v3/users接口，通过employee_id搜索用户。
+    返回的数据中包含多个用户，用user_id精确匹配employee_id，以获取正确用户的名字。
     """
     url = "https://open.larksuite.com/open-apis/contact/v3/users"
     headers = {
@@ -70,22 +71,22 @@ def get_user_name_by_employee_id(employee_id):
 
     if data.get("code") == 0:
         items = data.get("data", {}).get("items", [])
+        # 遍历 items ，找出 user_id == employee_id 的用户
         for user in items:
-            # 优先获取与employee_id匹配的用户名称
-            if user.get("user_id") == employee_id or user.get("name"):
+            if user.get("user_id") == employee_id:
                 return user.get("name", employee_id)
     return employee_id
 
 def check_and_notify(employee_id, clock_in_time):
     print(f"Check started for {employee_id}, time: {clock_in_time}")
-    # 首先等待4.5小时(4.5 * 3600 = 16200秒)
+    # 等待4.5小时 (4.5 * 3600 = 16200 秒)
     time.sleep(10)
     if employee_id in clock_ins:
         # 用户仍未下班，提醒员工
         print(f"User {employee_id} not off-duty after 4.5 hours, reminding user...")
         send_message(employee_id, "您已经连续工作4.5小时，请尽快休息并下班打卡(如果需要)。")
 
-        # 再等待0.5小时(0.5 * 3600 = 1800秒)共计5小时
+        # 再等待0.5小时 (0.5 * 3600 = 1800 秒), 总计5小时
         time.sleep(10)
         if employee_id in clock_ins:
             # 用户仍未下班，提醒HR
@@ -93,7 +94,7 @@ def check_and_notify(employee_id, clock_in_time):
             user_name = get_user_name_by_employee_id(employee_id)
             send_message(HR_USER_ID, f"员工 {user_name} 已连续5小时未下班。")
         else:
-            print(f"User {employee_id} off-duty within the last 0.5 hour, no HR reminder needed.")
+            print(f"User {employee_id} off-duty within 0.5 hour after employee reminder, no HR reminder needed.")
     else:
         print(f"User {employee_id} off-duty before 4.5 hours, no reminders needed.")
 
@@ -137,13 +138,13 @@ def webhook():
         if first[0] == "on" and first[1] == "Normal":
             if second[0] == "off":
                 if second[1] == "":
-                    # 实为clock in
+                    # 实为上班打卡
                     clock_ins[employee_id] = punch_time
                     print(f"User {employee_id} is actually clock in at index={max_index}, starting check thread.")
                     t = threading.Thread(target=check_and_notify, args=(employee_id, punch_time))
                     t.start()
                 elif second[1] == "Normal":
-                    # 实为clock out
+                    # 实为下班打卡
                     if employee_id in clock_ins:
                         del clock_ins[employee_id]
                         print(f"User {employee_id} is actually clock out at index={max_index}, removed from clock_ins.")

@@ -15,8 +15,7 @@ HR_USER_ID = os.environ.get("HR_USER_ID", "HR_USER_ID")
 
 BOT_ACCESS_TOKEN = None
 TOKEN_EXPIRY = 0
-
-TARGET_DEPT_ID = "od-d426edf9693be928abbec635cb290358"  # 要验证的部门ID
+TARGET_DEPT_ID = "od-d426edf9693be928abbec635cb290358"
 
 def get_bot_access_token():
     global BOT_ACCESS_TOKEN, TOKEN_EXPIRY
@@ -42,20 +41,23 @@ def send_message(user_id, text):
         "Content-Type": "application/json"
     }
     safe_text = text.replace("（", "(").replace("）", ")")
+
+    # 根据 Lark 文档，content 必须是 json 字符串
+    # 先用 json.dumps 将 {"text": safe_text} 转成字符串，然后再塞入 payload 的 content 字段中
+    content_str = json.dumps({"text": safe_text})
+
     payload = {
         "receive_id": user_id,
         "msg_type": "text",
-        "content": {
-            "text": safe_text
-        }
+        "content": content_str
     }
-    response = requests.post(url, headers=headers, data=json.dumps(payload))
+
+    response = requests.post(url, headers=headers, json=payload)
     resp_data = response.json()
     print(f"Sending message to {user_id}: {resp_data}")
     return resp_data
 
 def get_user_info(user_id):
-    """根据 user_id 获取用户信息，返回包含 department_ids 的数据结构。"""
     url = f"https://open.larksuite.com/open-apis/contact/v3/users/{user_id}?user_id_type=user_id"
     headers = {
         "Authorization": f"Bearer {get_bot_access_token()}"
@@ -74,8 +76,6 @@ def check_user_department(user_id):
     user_info = user_data.get("data", {}).get("user", {})
     dept_ids = user_info.get("department_ids", [])
     print(f"User {user_id} departments: {dept_ids}")
-
-    # 直接检查部门ID列表是否包含目标部门ID
     return TARGET_DEPT_ID in dept_ids
 
 def check_and_notify(user_id, clock_in_time):

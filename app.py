@@ -55,6 +55,7 @@ def get_user_name_by_employee_id(employee_id):
     """
     使用GET /open-apis/contact/v3/users接口，通过employee_id搜索用户。
     返回的数据中包含多个用户，用user_id精确匹配employee_id，以获取正确用户的名字。
+    如果未找到匹配用户则返回None。
     """
     url = "https://open.larksuite.com/open-apis/contact/v3/users"
     headers = {
@@ -74,36 +75,43 @@ def get_user_name_by_employee_id(employee_id):
         # 遍历 items ，找出 user_id == employee_id 的用户
         for user in items:
             if user.get("user_id") == employee_id:
-                return user.get("name", employee_id)
-    return employee_id
+                return user.get("name") or None
+    return None
 
 def check_and_notify(employee_id, start_time):
     print(f"Check started for {employee_id}, time: {start_time}")
-    # 首先等待4.5小时 (4.5 * 3600 = 16200 秒)
+    # 等待4.5小时 (4.5 * 3600 = 16200 秒)
     time.sleep(16200)
     # 检查当前场景是否一致
     if employee_id in clock_ins:
-        # 对比当前记录的时间和初始场景时间
         if clock_ins[employee_id] == start_time:
-            # 用户仍未下班，提醒员工(英文在前，中文在后)
-            print(f"User {employee_id} not off-duty after 4.5 hours, reminding user...")
-            employee_message = "You have been working for 4.5 hours continuously. Please take a break and clock out if necessary.\n您已经连续工作4.5小时，请尽快休息并下班打卡(如果需要)。"
-            send_message(employee_id, employee_message)
+            # 在给员工发送提醒之前验证用户是否存在
+            user_name = get_user_name_by_employee_id(employee_id)
+            if user_name is not None:
+                # 用户存在，发送给员工提醒(英文在前，中文在后)
+                print(f"User {employee_id} not off-duty after 4.5 hours, reminding user...")
+                employee_message = "You have been working for 4.5 hours continuously. Please take a break and clock out if necessary.\n您已经连续工作4.5小时，请尽快休息并下班打卡(如果需要)。"
+                send_message(employee_id, employee_message)
 
-            # 再等待0.5小时 (0.5 * 3600 = 1800 秒), 总计5小时
-            time.sleep(1800)
-            if employee_id in clock_ins and clock_ins[employee_id] == start_time:
-                # 用户仍未下班，提醒HR(英文)
-                print(f"User {employee_id} not off-duty after 5 hours, reminding HR...")
-                user_name = get_user_name_by_employee_id(employee_id)
-                hr_message = f"Employee {user_name} has not clocked out after 5 hours of continuous work."
-                send_message(HR_USER_ID, hr_message)
+                # 再等待0.5小时 (1800秒), 总计5小时
+                time.sleep(1800)
+                if employee_id in clock_ins and clock_ins[employee_id] == start_time:
+                    # 再次检查用户是否存在
+                    user_name = get_user_name_by_employee_id(employee_id)
+                    if user_name is not None:
+                        print(f"User {employee_id} not off-duty after 5 hours, reminding HR...")
+                        hr_message = f"Employee {user_name} has not clocked out after 5 hours of continuous work."
+                        send_message(HR_USER_ID, hr_message)
+                    else:
+                        print(f"User {employee_id} not found in user list response at 5h mark, no HR reminder.")
+                else:
+                    print(f"User {employee_id} off-duty within 0.5 hour after employee reminder or scenario changed, no HR reminder needed.")
             else:
-                print(f"User {employee_id} off-duty within 0.5 hour after employee reminder or scenario changed, no HR reminder needed.")
+                print(f"User {employee_id} not found in user list at 4.5h mark, no reminder to employee.")
         else:
             print(f"Scenario changed for user {employee_id}, no reminder needed.")
     else:
-        print(f"User {employee_id} is off-duty or scenario changed, no reminders needed at 4.5 hours check.")
+        print(f"User {employee_id} is off-duty or scenario changed before 4.5 hours, no reminders needed.")
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
